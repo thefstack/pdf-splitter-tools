@@ -52,7 +52,7 @@ export default function RootLayout({ children }) {
               <div>
                 Created by{" "}
                 <a
-                  href="https://thefstack.tech"
+                  href="https://thefstack.com"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:underline"
