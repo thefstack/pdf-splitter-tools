@@ -1,5 +1,7 @@
 import "./globals.css"
 import { Inter } from "next/font/google"
+import { Analytics } from "@vercel/analytics/react"
+import { Suspense } from "react"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -39,13 +41,29 @@ export default function RootLayout({ children }) {
               </div>
             </div>
           </header>
-          <main className="flex-1">{children}</main>
+          <main className="flex-1">
+            <Suspense fallback={<p>Loading...</p>}>{children}</Suspense>
+          </main>
           <footer className="bg-white border-t py-4 mt-8">
             <div className="max-w-5xl mx-auto px-4 md:px-8 text-center text-sm text-gray-500">
-              PDF Splitter &copy; {new Date().getFullYear()} - All processing happens in your browser
+              <div className="mb-2">
+                PDF Splitter &copy; {new Date().getFullYear()} - All processing happens in your browser
+              </div>
+              <div>
+                Created by{" "}
+                <a
+                  href="https://thefstack.tech"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  thefstack
+                </a>
+              </div>
             </div>
           </footer>
         </div>
+        <Analytics />
       </body>
     </html>
   )
