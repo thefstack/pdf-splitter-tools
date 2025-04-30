@@ -10,6 +10,8 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import JSZip from "jszip"
 import { PDFDocument } from "pdf-lib"
+// Add the import for the PDF compressor at the top of the file
+import { compressPdfPage } from "@/lib/pdf-compressor"
 
 export default function PdfSplitter() {
   const [file, setFile] = useState(null)
@@ -23,6 +25,7 @@ export default function PdfSplitter() {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
+  const [splitResults, setSplitResults] = useState(null)
 
   const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0]
@@ -37,6 +40,7 @@ export default function PdfSplitter() {
       setFileSize(selectedFile.size)
       setError("")
       setSuccess(false)
+      setSplitResults(null)
 
       try {
         // Load the PDF to get page count
@@ -82,18 +86,24 @@ export default function PdfSplitter() {
     setError("")
     setIsProcessing(true)
     setProgress(0)
+    setSplitResults(null)
 
     try {
       const arrayBuffer = await file.arrayBuffer()
       let splitPdfs = []
+      let splitInfo = []
 
       if (splitByPages) {
         // Split by page count
-        splitPdfs = await splitPdfByPages(arrayBuffer, pagesPerSplit, setProgress)
+        const result = await splitPdfByPages(arrayBuffer, pagesPerSplit, setProgress)
+        splitPdfs = result.pdfs
+        splitInfo = result.info
       } else {
         // Split by file size - more accurate method
         const splitSizeBytes = splitSize * 1024 * 1024 // Convert MB to bytes
-        splitPdfs = await splitPdfBySize(arrayBuffer, splitSizeBytes, setProgress)
+        const result = await splitPdfBySize(arrayBuffer, splitSizeBytes, setProgress)
+        splitPdfs = result.pdfs
+        splitInfo = result.info
       }
 
       // Create a ZIP file with all the split PDFs
@@ -129,6 +139,10 @@ export default function PdfSplitter() {
 
       setSuccess(true)
       setIsProcessing(false)
+      setSplitResults({
+        totalParts: splitPdfs.length,
+        details: splitInfo,
+      })
 
       // Clean up the URL object
       setTimeout(() => URL.revokeObjectURL(downloadUrl), 100)
@@ -144,6 +158,7 @@ export default function PdfSplitter() {
     const srcPdfDoc = await PDFDocument.load(pdfBuffer)
     const totalPages = srcPdfDoc.getPageCount()
     const splitPdfs = []
+    const splitInfo = []
 
     // Calculate how many PDFs we'll create
     const numPdfs = Math.ceil(totalPages / pagesPerSplit)
@@ -175,69 +190,144 @@ export default function PdfSplitter() {
       // Add to our array of split PDFs
       splitPdfs.push(pdfBytes)
 
+      // Add info about this split
+      splitInfo.push({
+        partNumber: i + 1,
+        pageRange: `${startPage + 1}-${endPage}`,
+        size: formatFileSize(pdfBytes.length),
+      })
+
       // Update progress
       progressCallback(((i + 1) / numPdfs) * 100)
     }
 
-    return splitPdfs
+    return { pdfs: splitPdfs, info: splitInfo }
   }
 
-  // New function to split PDF by size - more accurate approach
+  // Update the splitPdfBySize function to include compression for oversized pages
+  // Replace the existing splitPdfBySize function with this updated version:
+
+  // Completely revised function to split PDF by size with compression for oversized pages
   const splitPdfBySize = async (pdfBuffer, maxSizeBytes, progressCallback) => {
     const srcPdfDoc = await PDFDocument.load(pdfBuffer)
     const totalPages = srcPdfDoc.getPageCount()
     const splitPdfs = []
+    const splitInfo = []
 
-    let currentDoc = await PDFDocument.create()
-    let currentDocPages = 0
+    // Apply a safety margin to account for overhead (95% of the requested size)
+    const safeMaxSize = maxSizeBytes * 0.95
+
     let currentPart = 1
+    let currentPageStart = 0
+    let overallProgress = 0
 
-    // Process each page
-    for (let i = 0; i < totalPages; i++) {
-      // Copy the current page
-      const [currentPage] = await currentDoc.copyPages(srcPdfDoc, [i])
-      currentDoc.addPage(currentPage)
-      currentDocPages++
+    // Process pages
+    while (currentPageStart < totalPages) {
+      let currentPageEnd = currentPageStart
+      let currentSize = 0
+      let foundValidSplit = false
+      const compressedPages = {}
 
-      // Check if we need to finalize this part
-      // We'll check after adding each page (except the last one)
-      const isLastPage = i === totalPages - 1
+      // Create a new document for testing
+      const testDoc = await PDFDocument.create()
 
-      if (!isLastPage) {
-        // Save the current document to check its size
-        const currentPdfBytes = await currentDoc.save()
-        const currentSize = currentPdfBytes.length
+      // Try adding pages one by one until we exceed the size limit
+      while (currentPageEnd < totalPages) {
+        // Copy the current page to test document
+        const [copiedPage] = await testDoc.copyPages(srcPdfDoc, [currentPageEnd])
+        testDoc.addPage(copiedPage)
 
-        // If adding this page made the document exceed the size limit,
-        // save the current document and start a new one
-        // But only if we've added at least one page (to handle cases where a single page is larger than the limit)
-        if (currentSize > maxSizeBytes && currentDocPages > 1) {
-          // Remove the last page since it made us exceed the limit
-          const pagesArray = currentDoc.getPages()
-          currentDoc.removePage(pagesArray.length - 1)
+        // Check the size
+        const testBytes = await testDoc.save()
+        currentSize = testBytes.length
 
-          // Save this document
-          const pdfBytes = await currentDoc.save()
-          splitPdfs.push(pdfBytes)
-
-          // Start a new document with the page that made us exceed the limit
-          currentDoc = await PDFDocument.create()
-          const [newPage] = await currentDoc.copyPages(srcPdfDoc, [i])
-          currentDoc.addPage(newPage)
-          currentDocPages = 1
-          currentPart++
+        // If we've exceeded the safe size limit, stop adding pages
+        // But make sure we include at least one page
+        if (currentSize > safeMaxSize && currentPageEnd > currentPageStart) {
+          foundValidSplit = true
+          break
         }
-      } else {
-        // If this is the last page, save the current document
-        const pdfBytes = await currentDoc.save()
-        splitPdfs.push(pdfBytes)
+
+        // Move to the next page
+        currentPageEnd++
       }
 
-      // Update progress
-      progressCallback(((i + 1) / totalPages) * 100)
+      // If we didn't find a valid split point but processed some pages,
+      // it means we reached the end of the document
+      if (!foundValidSplit && currentPageEnd > currentPageStart) {
+        currentPageEnd = totalPages
+      }
+
+      // Special case: If we only have one page and it exceeds the size limit,
+      // try to compress it
+      if (currentPageEnd - currentPageStart === 1 && currentSize > safeMaxSize) {
+        const pageIndex = currentPageStart
+
+        // Update progress to show we're compressing
+        progressCallback(overallProgress + ((pageIndex - currentPageStart) / totalPages) * 100)
+
+        try {
+          // Try to compress the page
+          const compressedPageBuffer = await compressPdfPage(
+            pdfBuffer,
+            pageIndex,
+            safeMaxSize,
+            (compressionProgress) => {
+              // Update overall progress based on compression progress
+              progressCallback(overallProgress + (compressionProgress / 100) * (100 / totalPages))
+            },
+          )
+
+          // Store the compressed page
+          compressedPages[pageIndex] = compressedPageBuffer
+        } catch (err) {
+          console.error(`Error compressing page ${pageIndex + 1}:`, err)
+          // Continue with the uncompressed page
+        }
+      }
+
+      // Now create the actual document with the determined page range
+      const finalDoc = await PDFDocument.create()
+
+      // Add pages to the final document
+      for (let i = currentPageStart; i < currentPageEnd; i++) {
+        if (compressedPages[i]) {
+          // If we have a compressed version of this page, use it
+          const compressedDoc = await PDFDocument.load(compressedPages[i])
+          const [compressedPage] = await finalDoc.copyPages(compressedDoc, [0])
+          finalDoc.addPage(compressedPage)
+        } else {
+          // Otherwise use the original page
+          const [originalPage] = await finalDoc.copyPages(srcPdfDoc, [i])
+          finalDoc.addPage(originalPage)
+        }
+      }
+
+      // Save the document
+      const pdfBytes = await finalDoc.save()
+      splitPdfs.push(pdfBytes)
+
+      // Add info about this split
+      const wasCompressed = Object.keys(compressedPages).length > 0
+      splitInfo.push({
+        partNumber: currentPart,
+        pageRange: `${currentPageStart + 1}-${currentPageEnd}`,
+        size: formatFileSize(pdfBytes.length),
+        sizeBytes: pdfBytes.length,
+        sizeLimit: formatFileSize(maxSizeBytes),
+        compressed: wasCompressed,
+      })
+
+      // Move to the next part
+      currentPart++
+      currentPageStart = currentPageEnd
+
+      // Update overall progress
+      overallProgress = (currentPageStart / totalPages) * 100
+      progressCallback(overallProgress)
     }
 
-    return splitPdfs
+    return { pdfs: splitPdfs, info: splitInfo }
   }
 
   return (
@@ -284,7 +374,7 @@ export default function PdfSplitter() {
 
               {!splitByPages && (
                 <div className="space-y-2 ml-6">
-                  <Label htmlFor="split-size">Split Size (MB)</Label>
+                  <Label htmlFor="split-size">Maximum Size per Split (MB)</Label>
                   <div className="flex gap-2">
                     <Input
                       id="split-size"
@@ -297,7 +387,7 @@ export default function PdfSplitter() {
                     <div className="flex-1 flex items-center gap-2">
                       <Scissors className="h-4 w-4 text-gray-500" />
                       <span className="text-sm text-gray-600">
-                        Each part will be approximately {splitSize}MB or less
+                        Each part will be under {splitSize}MB. Large pages will be compressed automatically.
                       </span>
                     </div>
                   </div>
@@ -383,6 +473,72 @@ export default function PdfSplitter() {
             Your PDF has been split successfully and downloaded as a ZIP file.
           </AlertDescription>
         </Alert>
+      )}
+
+      {splitResults && (
+        <Card>
+          <CardContent className="pt-6">
+            <h3 className="text-lg font-medium mb-4">Split Results</h3>
+            <p className="text-sm text-gray-600 mb-4">Your PDF was split into {splitResults.totalParts} parts:</p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Part
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Pages
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Size
+                    </th>
+                    {!splitByPages && (
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Limit
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+                {/* Update the table in the render function to show compression status
+                Find the table body section and replace it with: */}
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {splitResults.details.map((part) => (
+                    <tr key={part.partNumber}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Part {part.partNumber}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{part.pageRange}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {part.size}
+                        {part.compressed && (
+                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                            Compressed
+                          </span>
+                        )}
+                      </td>
+                      {!splitByPages && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{part.sizeLimit}</td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )
