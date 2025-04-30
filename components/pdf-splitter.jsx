@@ -85,18 +85,15 @@ export default function PdfSplitter() {
 
     try {
       const arrayBuffer = await file.arrayBuffer()
-      const pdfDoc = await PDFDocument.load(arrayBuffer)
-      const pageCount = pdfDoc.getPageCount()
-
       let splitPdfs = []
 
       if (splitByPages) {
         // Split by page count
         splitPdfs = await splitPdfByPages(arrayBuffer, pagesPerSplit, setProgress)
       } else {
-        // Split by file size (approximate)
-        const pagesPerChunk = Math.max(1, Math.ceil((pageCount * (splitSize * 1024 * 1024)) / fileSize))
-        splitPdfs = await splitPdfByPages(arrayBuffer, pagesPerChunk, setProgress)
+        // Split by file size - more accurate method
+        const splitSizeBytes = splitSize * 1024 * 1024 // Convert MB to bytes
+        splitPdfs = await splitPdfBySize(arrayBuffer, splitSizeBytes, setProgress)
       }
 
       // Create a ZIP file with all the split PDFs
@@ -185,6 +182,64 @@ export default function PdfSplitter() {
     return splitPdfs
   }
 
+  // New function to split PDF by size - more accurate approach
+  const splitPdfBySize = async (pdfBuffer, maxSizeBytes, progressCallback) => {
+    const srcPdfDoc = await PDFDocument.load(pdfBuffer)
+    const totalPages = srcPdfDoc.getPageCount()
+    const splitPdfs = []
+
+    let currentDoc = await PDFDocument.create()
+    let currentDocPages = 0
+    let currentPart = 1
+
+    // Process each page
+    for (let i = 0; i < totalPages; i++) {
+      // Copy the current page
+      const [currentPage] = await currentDoc.copyPages(srcPdfDoc, [i])
+      currentDoc.addPage(currentPage)
+      currentDocPages++
+
+      // Check if we need to finalize this part
+      // We'll check after adding each page (except the last one)
+      const isLastPage = i === totalPages - 1
+
+      if (!isLastPage) {
+        // Save the current document to check its size
+        const currentPdfBytes = await currentDoc.save()
+        const currentSize = currentPdfBytes.length
+
+        // If adding this page made the document exceed the size limit,
+        // save the current document and start a new one
+        // But only if we've added at least one page (to handle cases where a single page is larger than the limit)
+        if (currentSize > maxSizeBytes && currentDocPages > 1) {
+          // Remove the last page since it made us exceed the limit
+          const pagesArray = currentDoc.getPages()
+          currentDoc.removePage(pagesArray.length - 1)
+
+          // Save this document
+          const pdfBytes = await currentDoc.save()
+          splitPdfs.push(pdfBytes)
+
+          // Start a new document with the page that made us exceed the limit
+          currentDoc = await PDFDocument.create()
+          const [newPage] = await currentDoc.copyPages(srcPdfDoc, [i])
+          currentDoc.addPage(newPage)
+          currentDocPages = 1
+          currentPart++
+        }
+      } else {
+        // If this is the last page, save the current document
+        const pdfBytes = await currentDoc.save()
+        splitPdfs.push(pdfBytes)
+      }
+
+      // Update progress
+      progressCallback(((i + 1) / totalPages) * 100)
+    }
+
+    return splitPdfs
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -224,7 +279,7 @@ export default function PdfSplitter() {
                   onChange={() => setSplitByPages(false)}
                   className="h-4 w-4 text-blue-600"
                 />
-                <Label htmlFor="split-by-size">Split by approximate file size</Label>
+                <Label htmlFor="split-by-size">Split by file size</Label>
               </div>
 
               {!splitByPages && (
@@ -242,9 +297,7 @@ export default function PdfSplitter() {
                     <div className="flex-1 flex items-center gap-2">
                       <Scissors className="h-4 w-4 text-gray-500" />
                       <span className="text-sm text-gray-600">
-                        {file
-                          ? `Will create approximately ${Math.ceil(fileSize / (splitSize * 1024 * 1024))} files`
-                          : "Enter split size in MB"}
+                        Each part will be approximately {splitSize}MB or less
                       </span>
                     </div>
                   </div>

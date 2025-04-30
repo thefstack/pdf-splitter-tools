@@ -40,7 +40,7 @@ PDF Splitter is a web application that allows users to split large PDF files int
 
 1. **Upload**: User selects a PDF file from their device
 2. **Choose split method**:
-   - By approximate file size (MB)
+   - By file size (MB)
    - By page count
 3. **Process**: The application splits the PDF in the browser
 4. **Download**: User receives a ZIP file containing all split PDFs
@@ -57,11 +57,17 @@ When splitting by page count, the application:
 3. Copies the specified number of pages to each new document
 4. Packages all new PDFs into a ZIP file
 
-#### Splitting by File Size (Approximate)
+#### Splitting by File Size
 
 When splitting by file size, the application:
-1. Calculates the approximate number of pages per chunk based on the total file size and requested chunk size
-2. Uses the page count splitting method with the calculated number of pages per chunk
+1. Loads the PDF document
+2. Creates a new PDF document
+3. Adds pages one by one, checking the file size after each addition
+4. When the size approaches the specified limit, it finalizes that document and starts a new one
+5. Continues this process until all pages are processed
+6. Packages all split PDFs into a ZIP file
+
+This approach ensures that each split PDF stays under the specified size limit while maximizing the number of pages in each part.
 
 ## 💻 Technical Implementation
 
@@ -80,47 +86,57 @@ When splitting by file size, the application:
 - **Progress Tracking**: Real-time feedback during processing
 - **Responsive UI**: Adapts to different screen sizes
 
-### Code Example: PDF Splitting Function
+### Code Example: PDF Splitting by Size Function
 
 \`\`\`javascript
-// Function to split PDF by pages
-const splitPdfByPages = async (pdfBuffer, pagesPerSplit, progressCallback) => {
+const splitPdfBySize = async (pdfBuffer, maxSizeBytes, progressCallback) => {
   const srcPdfDoc = await PDFDocument.load(pdfBuffer)
   const totalPages = srcPdfDoc.getPageCount()
   const splitPdfs = []
   
-  // Calculate how many PDFs we'll create
-  const numPdfs = Math.ceil(totalPages / pagesPerSplit)
+  let currentDoc = await PDFDocument.create()
+  let currentDocPages = 0
   
-  for (let i = 0; i < numPdfs; i++) {
-    // Create a new PDF document
-    const newPdfDoc = await PDFDocument.create()
+  // Process each page
+  for (let i = 0; i < totalPages; i++) {
+    // Copy the current page
+    const [currentPage] = await currentDoc.copyPages(srcPdfDoc, [i])
+    currentDoc.addPage(currentPage)
+    currentDocPages++
     
-    // Calculate page range for this split
-    const startPage = i * pagesPerSplit
-    const endPage = Math.min(startPage + pagesPerSplit, totalPages)
+    // Check if we need to finalize this part
+    const isLastPage = i === totalPages - 1
     
-    // Copy pages from source PDF to new PDF
-    const pagesToCopy = []
-    for (let j = startPage; j < endPage; j++) {
-      pagesToCopy.push(j)
+    if (!isLastPage) {
+      // Save the current document to check its size
+      const currentPdfBytes = await currentDoc.save()
+      const currentSize = currentPdfBytes.length
+      
+      // If adding this page made the document exceed the size limit,
+      // save the current document and start a new one
+      if (currentSize > maxSizeBytes && currentDocPages > 1) {
+        // Remove the last page since it made us exceed the limit
+        const pagesArray = currentDoc.getPages()
+        currentDoc.removePage(pagesArray.length - 1)
+        
+        // Save this document
+        const pdfBytes = await currentDoc.save()
+        splitPdfs.push(pdfBytes)
+        
+        // Start a new document with the page that made us exceed the limit
+        currentDoc = await PDFDocument.create()
+        const [newPage] = await currentDoc.copyPages(srcPdfDoc, [i])
+        currentDoc.addPage(newPage)
+        currentDocPages = 1
+      }
+    } else {
+      // If this is the last page, save the current document
+      const pdfBytes = await currentDoc.save()
+      splitPdfs.push(pdfBytes)
     }
     
-    const copiedPages = await newPdfDoc.copyPages(srcPdfDoc, pagesToCopy)
-    
-    // Add copied pages to new document
-    copiedPages.forEach(page => {
-      newPdfDoc.addPage(page)
-    })
-    
-    // Save the new PDF as bytes
-    const pdfBytes = await newPdfDoc.save()
-    
-    // Add to our array of split PDFs
-    splitPdfs.push(pdfBytes)
-    
     // Update progress
-    progressCallback(((i + 1) / numPdfs) * 100)
+    progressCallback(((i + 1) / totalPages) * 100)
   }
   
   return splitPdfs

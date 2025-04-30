@@ -66,8 +66,8 @@
     "@azure/storage-blob": "latest",
     "uuid": "latest",
     "jszip": "latest",
-    "pdf-lib": "latest",
-    "@vercel/analytics": "latest"
+    "@vercel/analytics": "latest",
+    "pdf-lib": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
