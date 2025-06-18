@@ -51,14 +51,7 @@ export default function Footer() {
           <div className="col-span-1">
             <h3 className="font-semibold text-gray-800 mb-4 uppercase text-sm tracking-wider">Projects</h3>
             <ul className="space-y-2">
-              <li>
-                <Link
-                  href="https://prepai.ivyproschool.com/"
-                  className="text-gray-600 hover:text-blue-600 transition-colors"
-                >
-                  PrepAI
-                </Link>
-              </li>
+              
               <li>
                 <Link
                   href="https://pdf-splitter.thefstack.com/"
