@@ -10,7 +10,7 @@ export default function Footer() {
           {/* Logo and About */}
           <div className="col-span-1 md:col-span-1">
             <div className="mb-4">
-              <Image src="/logo.svg" alt="theFstack Logo" width={150} height={50} className="h-auto" />
+              <Image src="/logo.png" alt="theFstack Logo" width={150} height={50} className="h-auto" />
             </div>
             <p className="text-gray-600 text-sm mb-4">
               Full Stack Developer specializing in Next.js, React, and Node.js applications. Building modern web
