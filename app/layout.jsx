@@ -33,7 +33,7 @@ export default function RootLayout({ children }) {
             <div className="max-w-6xl mx-auto px-4 md:px-8">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <img src="/logo.svg" alt="theFstack Logo" className="h-8 w-auto" />
+                  <h1 className="text-blue-500">thefstack</h1>
                   <span className="text-xl font-bold">PDF Splitter</span>
                 </div>
               </div>
