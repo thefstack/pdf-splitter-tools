@@ -1,5 +1,5 @@
 {
-  "name": "my-v0-project",
+  "name": "fstack-tools",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -52,7 +52,11 @@
     "lucide-react": "^0.454.0",
     "next": "15.2.4",
     "next-themes": "latest",
+    "onnxruntime-node": "^1.24.3",
     "pdf-lib": "latest",
+    "pdf-parse": "^1.1.1",
+    "pdf2json": "^4.0.2",
+    "pdfjs-dist": "^5.5.207",
     "react": "^19",
     "react-day-picker": "latest",
     "react-dom": "^19",
@@ -67,7 +71,15 @@
     "vaul": "latest",
     "vue": "latest",
     "vue-router": "latest",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "onnxruntime-node",
+      "sharp"
+    ]
   },
   "devDependencies": {
     "@types/node": "^22",

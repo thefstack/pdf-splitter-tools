@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp \"d:/thefstack/SAAS PRODUCTS/pdf-splitter-tools/model/bank-model.onnx\" \"d:/thefstack/SAAS PRODUCTS/bank-statement-extractor/model/\")",
+      "Bash(cp \"d:/thefstack/SAAS PRODUCTS/pdf-splitter-tools/model/bank-model-config.json\" \"d:/thefstack/SAAS PRODUCTS/bank-statement-extractor/model/\")",
+      "Bash(cp \"d:/thefstack/SAAS PRODUCTS/pdf-splitter-tools/tailwind.config.js\" \"d:/thefstack/SAAS PRODUCTS/bank-statement-extractor/\")",
+      "Bash(cp \"d:/thefstack/SAAS PRODUCTS/pdf-splitter-tools/tsconfig.json\" \"d:/thefstack/SAAS PRODUCTS/bank-statement-extractor/\")",
+      "Bash(cp \"d:/thefstack/SAAS PRODUCTS/pdf-splitter-tools/postcss.config.mjs\" \"d:/thefstack/SAAS PRODUCTS/bank-statement-extractor/\")"
+    ]
+  }
+}

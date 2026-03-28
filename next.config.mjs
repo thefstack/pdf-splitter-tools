@@ -9,6 +9,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ['onnxruntime-node', 'pdf-parse', 'pdfjs-dist', 'pdf2json'],
 }
 
 export default nextConfig
